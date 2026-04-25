@@ -1,6 +1,6 @@
 """
 Hitman: World of Assassination — AI Agent
-Uses the Gemini API (gemma-3-27b) to analyse live gameplay screenshots
+Uses the Gemini API (gemma-3-27b) to analyze live gameplay screenshots
 and issue keyboard commands via pydirectinput.
 """
 
@@ -12,6 +12,7 @@ import time
 import google.generativeai as genai
 import PIL.ImageGrab
 import pydirectinput
+from google.api_core.exceptions import GoogleAPICallError
 from dotenv import load_dotenv
 
 # ---------------------------------------------------------------------------
@@ -172,37 +173,37 @@ def main() -> None:
     print("Agent running — press Ctrl+C to stop.\n")
 
     while True:
+        # 1. Capture the screen
+        image = capture_screen()
+
+        # 2. Convert to bytes for the SDK
+        image_bytes = image_to_bytes(image)
+        image_part = {"mime_type": "image/png", "data": image_bytes}
+
         try:
-            # 1. Capture the screen
-            image = capture_screen()
-
-            # 2. Convert to bytes for the SDK
-            image_bytes = image_to_bytes(image)
-            image_part = {"mime_type": "image/png", "data": image_bytes}
-
             # 3. Send to Gemini
             response = model.generate_content(
                 ["Analyze the current game state and decide the next action.", image_part]
             )
+        except GoogleAPICallError as exc:
+            print(f"[API error] {exc}")
+            # Back off to respect rate limits before retrying
+            time.sleep(5)
+            continue
 
-            response_text = response.text
+        response_text = response.text
 
+        try:
             # 4. Parse JSON
             action = parse_action(response_text)
-
-            # 5. Execute the action
-            execute_action(action)
-
         except json.JSONDecodeError as exc:
             print(f"[JSON error] Could not parse model response: {exc}")
             print(f"  Raw response: {response_text!r}\n")
             time.sleep(1)
+            continue
 
-        except Exception as exc:  # noqa: BLE001 – catch-all for API rate limits etc.
-            error_msg = str(exc)
-            print(f"[API error] {error_msg}")
-            # Back off to respect rate limits before retrying
-            time.sleep(5)
+        # 5. Execute the action
+        execute_action(action)
 
 
 if __name__ == "__main__":
