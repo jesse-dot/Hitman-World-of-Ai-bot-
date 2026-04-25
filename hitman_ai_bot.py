@@ -88,16 +88,27 @@ def create_tts_engine(enabled: bool) -> Any | None:
         return None
 
 
-def speak_text(tts_engine: Any | None, text: str) -> None:
-    """Speak text with TTS if available."""
+def speak_text(tts_engine: Any | None, text: str) -> Any | None:
+    """Speak text with TTS if available and return a usable engine."""
     if tts_engine is None or not text:
-        return
+        return tts_engine
 
     try:
         tts_engine.say(text)
         tts_engine.runAndWait()
+        tts_engine.stop()
+        return tts_engine
     except Exception as exc:  # noqa: BLE001
-        print(f"[TTS] Failed to speak text: {exc}")
+        print(f"[TTS] Failed to speak text: {exc}; reinitializing engine.")
+        try:
+            replacement_engine = pyttsx3.init()
+            replacement_engine.say(text)
+            replacement_engine.runAndWait()
+            replacement_engine.stop()
+            return replacement_engine
+        except Exception as retry_exc:  # noqa: BLE001
+            print(f"[TTS] Reinitialize failed: {retry_exc}")
+            return None
 
 
 def countdown(seconds: int) -> None:
@@ -145,7 +156,7 @@ def parse_action(response_text: str) -> dict:
     return json.loads(text)
 
 
-def execute_action(action: dict, tts_engine: Any | None = None) -> None:
+def execute_action(action: dict, tts_engine: Any | None = None) -> Any | None:
     """
     Execute the keyboard action described by *action*.
 
@@ -163,14 +174,14 @@ def execute_action(action: dict, tts_engine: Any | None = None) -> None:
 
     print(f"Thought : {thought}")
     print(f"Action  : key={key!r}, duration={duration:.2f}s, hold_ctrl={hold_ctrl}")
-    speak_text(
+    tts_engine = speak_text(
         tts_engine,
         f"{thought}. Action: {key or 'no key'} for {duration:.1f} seconds.",
     )
 
     if not key:
         print("No key specified — skipping action.\n")
-        return
+        return tts_engine
 
     if hold_ctrl:
         pydirectinput.keyDown("ctrl")
@@ -184,6 +195,7 @@ def execute_action(action: dict, tts_engine: Any | None = None) -> None:
             pydirectinput.keyUp("ctrl")
 
     print()
+    return tts_engine
 
 
 # ---------------------------------------------------------------------------
@@ -244,7 +256,7 @@ def main() -> None:
             continue
 
         # 5. Execute the action
-        execute_action(action, tts_engine=tts_engine)
+        tts_engine = execute_action(action, tts_engine=tts_engine)
 
 
 if __name__ == "__main__":
