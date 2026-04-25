@@ -1,0 +1,3 @@
+google-generativeai>=0.7.0
+Pillow>=10.0.0
+pydirectinput>=1.0.4
