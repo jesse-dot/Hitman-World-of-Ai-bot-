@@ -8,10 +8,12 @@ import io
 import json
 import os
 import time
+from typing import Any
 
 import google.generativeai as genai
 import PIL.ImageGrab
 import pydirectinput
+import pyttsx3
 from google.api_core.exceptions import GoogleAPICallError
 from dotenv import load_dotenv
 
@@ -24,8 +26,14 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 MODEL_NAME = "gemma-3-27b-it"
 COUNTDOWN_SECONDS = 5
 AI_PERSONALITY = os.environ.get("AI_PERSONALITY", "balanced").strip().lower()
+ENABLE_TTS = os.environ.get("ENABLE_TTS", "true").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 
-BASE_SYSTEM_INSTRUCTION = (
+BASE_PROMPT_INSTRUCTION = (
     "Analyze this Hitman gameplay. Output ONLY a JSON object with: "
     '"thought" (string), "key" (string, e.g., "w", "a", "s", "d", "f", "c"), '
     '"duration" (float), and "hold_ctrl" (boolean for Instinct mode).'
@@ -51,8 +59,8 @@ PERSONALITY_INSTRUCTIONS = {
 # ---------------------------------------------------------------------------
 
 
-def get_system_instruction(personality: str) -> str:
-    """Build the full system instruction from the selected personality."""
+def get_prompt_instruction(personality: str) -> str:
+    """Build the full prompt instruction from the selected personality."""
     personality_instruction = PERSONALITY_INSTRUCTIONS.get(personality)
     if personality_instruction is None:
         print(
@@ -61,7 +69,35 @@ def get_system_instruction(personality: str) -> str:
         )
         personality_instruction = PERSONALITY_INSTRUCTIONS["balanced"]
 
-    return f"{BASE_SYSTEM_INSTRUCTION} {personality_instruction}"
+    return (
+        f"{BASE_PROMPT_INSTRUCTION} {personality_instruction} "
+        "Consider only what is visible right now. "
+        "Choose one immediate action."
+    )
+
+
+def create_tts_engine(enabled: bool) -> Any | None:
+    """Create and configure a TTS engine when enabled."""
+    if not enabled:
+        return None
+
+    try:
+        return pyttsx3.init()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[TTS] Failed to initialize TTS engine: {exc}")
+        return None
+
+
+def speak_text(tts_engine: Any | None, text: str) -> None:
+    """Speak text with TTS if available."""
+    if tts_engine is None or not text:
+        return
+
+    try:
+        tts_engine.say(text)
+        tts_engine.runAndWait()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[TTS] Failed to speak text: {exc}")
 
 
 def countdown(seconds: int) -> None:
@@ -109,7 +145,7 @@ def parse_action(response_text: str) -> dict:
     return json.loads(text)
 
 
-def execute_action(action: dict) -> None:
+def execute_action(action: dict, tts_engine: Any | None = None) -> None:
     """
     Execute the keyboard action described by *action*.
 
@@ -127,6 +163,10 @@ def execute_action(action: dict) -> None:
 
     print(f"Thought : {thought}")
     print(f"Action  : key={key!r}, duration={duration:.2f}s, hold_ctrl={hold_ctrl}")
+    speak_text(
+        tts_engine,
+        f"{thought}. Action: {key or 'no key'} for {duration:.1f} seconds.",
+    )
 
     if not key:
         print("No key specified — skipping action.\n")
@@ -159,13 +199,14 @@ def main() -> None:
         )
 
     genai.configure(api_key=GEMINI_API_KEY)
-    system_instruction = get_system_instruction(AI_PERSONALITY)
+    prompt_instruction = get_prompt_instruction(AI_PERSONALITY)
+    tts_engine = create_tts_engine(ENABLE_TTS)
 
     print(f"[Config] AI personality: {AI_PERSONALITY}")
+    print(f"[Config] TTS enabled: {tts_engine is not None}")
 
     model = genai.GenerativeModel(
         model_name=MODEL_NAME,
-        system_instruction=system_instruction,
     )
 
     countdown(COUNTDOWN_SECONDS)
@@ -183,7 +224,7 @@ def main() -> None:
         try:
             # 3. Send to Gemini
             response = model.generate_content(
-                ["Analyze the current game state and decide the next action.", image_part]
+                [prompt_instruction, image_part]
             )
         except GoogleAPICallError as exc:
             print(f"[API error] {exc}")
@@ -203,7 +244,7 @@ def main() -> None:
             continue
 
         # 5. Execute the action
-        execute_action(action)
+        execute_action(action, tts_engine=tts_engine)
 
 
 if __name__ == "__main__":
