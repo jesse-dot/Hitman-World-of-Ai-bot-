@@ -12,23 +12,55 @@ import time
 import google.generativeai as genai
 import PIL.ImageGrab
 import pydirectinput
+from dotenv import load_dotenv
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
+load_dotenv()
+
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 MODEL_NAME = "gemma-3-27b-it"
 COUNTDOWN_SECONDS = 5
+AI_PERSONALITY = os.environ.get("AI_PERSONALITY", "balanced").strip().lower()
 
-SYSTEM_INSTRUCTION = (
+BASE_SYSTEM_INSTRUCTION = (
     "Analyze this Hitman gameplay. Output ONLY a JSON object with: "
     '"thought" (string), "key" (string, e.g., "w", "a", "s", "d", "f", "c"), '
     '"duration" (float), and "hold_ctrl" (boolean for Instinct mode).'
 )
 
+PERSONALITY_INSTRUCTIONS = {
+    "balanced": (
+        "Play with balanced risk: move with purpose, avoid unnecessary combat, "
+        "and prioritize stealth when practical."
+    ),
+    "cautious": (
+        "Play very cautiously: prioritize stealth, avoid risky open movement, "
+        "minimize exposure to NPC sightlines, and disengage from danger quickly."
+    ),
+    "aggressive": (
+        "Play aggressively: move faster, take calculated risks, and push objectives "
+        "even when stealth is partially compromised."
+    ),
+}
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def get_system_instruction(personality: str) -> str:
+    """Build the full system instruction from the selected personality."""
+    personality_instruction = PERSONALITY_INSTRUCTIONS.get(personality)
+    if personality_instruction is None:
+        print(
+            f"[Config] Unknown AI_PERSONALITY={personality!r}; "
+            "falling back to 'balanced'."
+        )
+        personality_instruction = PERSONALITY_INSTRUCTIONS["balanced"]
+
+    return f"{BASE_SYSTEM_INSTRUCTION} {personality_instruction}"
 
 
 def countdown(seconds: int) -> None:
@@ -126,10 +158,13 @@ def main() -> None:
         )
 
     genai.configure(api_key=GEMINI_API_KEY)
+    system_instruction = get_system_instruction(AI_PERSONALITY)
+
+    print(f"[Config] AI personality: {AI_PERSONALITY}")
 
     model = genai.GenerativeModel(
         model_name=MODEL_NAME,
-        system_instruction=SYSTEM_INSTRUCTION,
+        system_instruction=system_instruction,
     )
 
     countdown(COUNTDOWN_SECONDS)
