@@ -1,6 +1,6 @@
 """
 Hitman: World of Assassination — AI Agent
-Uses the Gemini API (gemma-3-27b) to analyze live gameplay screenshots
+Uses the Gemini API (gemma-3-27b-it) to analyze live gameplay screenshots
 and issue keyboard commands via pydirectinput.
 """
 
